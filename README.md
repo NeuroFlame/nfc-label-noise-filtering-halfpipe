@@ -138,6 +138,7 @@ Each site produces the following files, in its own output directory:
 | --- | --- |
 | `relabeled.csv` | Per-subject dimensional scores and re-assigned labels (−1 = uncertain) |
 | `index.html` | Self-contained HTML report with KPIs, heatmaps, and scores table |
+| `qc_summary.csv` | HALFpipe inputs only: for each participant, the sessions and runs used and excluded and the matrix size. Stays at the site |
 | `original_labels_ttest.png` | Bonferroni-corrected T-test heatmap using original labels |
 | `re_labeled_ttest.png` | Bonferroni-corrected T-test heatmap using relabeled subjects |
 | `local_original_avg_fnc_{label}.png` | Local average FNC per group before relabeling |

@@ -11,6 +11,17 @@ for the general migration process, and
 [nfc-multi-round-regression-freesurfer](https://github.com/NeuroFlame/nfc-multi-round-regression-freesurfer)
 for a sibling computation migrated the same way.
 
+## Fork: reading HALFpipe derivatives
+
+This repository (`nfc-label-noise-filtering-halfpipe`) was forked from
+[`nfc-label-noise-filtering`](https://github.com/NeuroFlame/nfc-label-noise-filtering)
+at `4b53d0b`, keeping its history. The only functional addition is input
+handling: when a site's folder holds nested HALFpipe derivatives, `load_inputs`
+first converts them into the flat per-subject layout the original reader uses
+(`app/code/computation/halfpipe_inputs.py`), and the rest of the workflow is
+unchanged. The design, the decisions behind it and the remaining open questions
+are in [docs/PLAN_nested_halfpipe_inputs.md](docs/PLAN_nested_halfpipe_inputs.md).
+
 ## Why `stepped_workflow`, not `iterative_workflow`
 
 The old controller ran a fixed 4-round sequence with no convergence loop:
@@ -40,15 +51,28 @@ Same fix as the freesurfer migration: `load_inputs` mints a random
 once (in `compute_dimensional_scores`) and keeps it in state for later
 steps, including the final report.
 
-## State replaces the old disk round-trips
+## State and the run cache replace the old disk round-trips
 
 The old code round-tripped intermediate results through disk between tasks
 (`{site}_orig.mat` written then read back via `data_loaders.load_result_matfile`,
-`{site}_relabeled.csv` written then re-read). The new framework persists
-local state for the whole site workflow, so `compute_local_crf` caches the
-validated data array directly in state; `relabel_subjects` and
-`build_site_report` read it back from there instead of disk. `data_loaders.py`
-(whose only callers were those two re-reads) wasn't ported.
+`{site}_relabeled.csv` written then re-read). `data_loaders.py` (whose only
+callers were those two re-reads) wasn't ported.
+
+Small values (the site's `self_token`, its resolved name, its scores) live in
+the framework's local state. The validated subject-by-feature data array is
+cached as a file instead, using the run-scoped `cache_dir` the framework
+injects (computation-nvflare-boilerplate PR #13): `compute_local_crf` saves it
+with `cache_file("local_cache_data_file.npy", cache_dir=cache_dir)`, and
+`compute_dimensional_scores` and `relabel_subjects` load it from the same
+path. `cache_dir` is separate for each site and each run
+(`<output_dir>/.artifacts/cache`) and is cleared when the run ends.
+
+`build_site_report`, the last site step, also deletes the cached data file and
+the converted HALFpipe inputs itself (`results.remove_cached_site_data`). The
+framework's end-of-run cleanup is skipped when an artifact transfer is still
+open, and `cache_dir` sits in the site's mounted output folder, so the
+computation does not rely on it alone.
+
 
 ## Output filenames no longer include the site name
 
