@@ -4,11 +4,14 @@ import tempfile
 import unittest
 
 import numpy as np
+import pandas as pd
+from computation import constants
 from computation.local_math import (
     LOCAL_CACHE_DATA_FILE,
     compute_dimensional_scores,
     cumulative_features_selection,
 )
+from computation.reports import _build_distribution_section
 from computation.spec import SPEC
 from computation.types import CentroidSet, GlobalCentroidResult
 from framework import cache_file
@@ -90,6 +93,22 @@ class ComputeDimensionalScoresTests(unittest.TestCase):
         np.testing.assert_array_equal(
             payload.scores, next_state["site_scores"]["site1"]
         )
+
+
+class RelabeledDistributionTests(unittest.TestCase):
+    """The report counts each relabeled group by its internal label value."""
+
+    def test_counts_and_values_per_label(self):
+        scores = pd.DataFrame({"re_labeled": [1.0, 1.0, 2.0, -1.0]})
+        label_def = constants.get_label_definitions(
+            patient_label="SZ", control_label="HC"
+        )
+        html = _build_distribution_section(scores, label_def, 0.085)
+        self.assertNotIn("None", html)
+        cells = '<td style="font-family:monospace">{}</td>'
+        # SZ: value 1, 2 subjects (50%); HC: value 2, 1 subject (25%)
+        self.assertIn(cells.format(1) + cells.format(2) + cells.format("50.0%"), html)
+        self.assertIn(cells.format(2) + cells.format(1) + cells.format("25.0%"), html)
 
 
 if __name__ == "__main__":

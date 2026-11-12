@@ -134,7 +134,7 @@ def _build_distribution_section(scores_df, label_def, adaptive_threshold):
 
     rows = ""
     for k, v in sorted(label_def.items()):
-        lbl_val = v.get("label")
+        lbl_val = v.get("value")
         lbl_name = v.get("name", k)
         count = int((re_labels.round() == lbl_val).sum()) if total > 0 else 0
         pct = f"{100 * count / total:.1f}%" if total > 0 else "—"
