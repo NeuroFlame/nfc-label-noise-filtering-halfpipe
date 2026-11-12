@@ -5,15 +5,24 @@
   "LabelThreshold": 2,
   "TypicalThreshold": 0.8,
   "TruncationParameter": 0.2,
-  "ExistingDataFile" : "data.csv",
-  "LabelFile" : "labels.csv",
+  "LabelFile": "participants.csv",
+  "QCFile": "qc.csv",
   "ReadDataFileFromHalfpipeOutputs": {
-    "atlas": "schaefer2011",
-    "corr": "corrMatrix"
+    "atlas": "NeuroMark1",
+    "task": "rest"
   },
-  "ControlLabel": "HC",
-  "PatientLabel": "SZ",
-  "FNCDomainNames" :  [0, 5, 7, 16, 25, 42, 49, 53],
-  "IgnoreSubjectsWithMissingData" : true,
-  "LogLevel": "error"
+  "ControlLabel": 2,
+  "PatientLabel": 1,
+  "FNCDomainNames": [
+    0,
+    5,
+    7,
+    16,
+    25,
+    42,
+    49,
+    53
+  ],
+  "IgnoreSubjectsWithMissingData": true,
+  "LogLevel": "info"
 }

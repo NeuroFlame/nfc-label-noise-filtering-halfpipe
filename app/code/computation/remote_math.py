@@ -22,6 +22,7 @@ def aggregate_centroids(
 ):
     """Pool every site's centroids and compute the federated original-label FNC average."""
     sorted_names = sorted(site_results.keys())
+    check_matching_fnc_shapes(site_results)
 
     site_centroids = {name: site_results[name].centroids for name in sorted_names}
     token_to_name = {site_results[name].self_token: name for name in sorted_names}
@@ -137,6 +138,21 @@ def aggregate_relabeled_metrics(
         global_avg_fnc_relabeled=global_avg_fnc_relabeled,
         adaptive_threshold=state["adaptive_threshold"],
     )
+
+
+def check_matching_fnc_shapes(site_results: Dict[str, CrfLocalResult]):
+    """Fail clearly when sites send FNC matrices of different sizes (different atlases)."""
+    shapes = {}
+    for name in sorted(site_results):
+        sums = site_results[name].fnc_sum
+        if sums:
+            shapes[name] = np.asarray(next(iter(sums.values()))).shape
+    if len(set(shapes.values())) > 1:
+        detail = ", ".join(f"{name}: {'x'.join(map(str, shape))}" for name, shape in shapes.items())
+        raise ValueError(
+            "Sites sent FNC matrices of different sizes, so they did not use the same atlas "
+            f"({detail}). Every site must use the atlas set in the computation parameters."
+        )
 
 
 def global_mean_from_sites(fnc_sums, fnc_counts):

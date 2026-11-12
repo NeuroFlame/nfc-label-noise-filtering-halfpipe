@@ -1,4 +1,4 @@
-**Source code:** [https://github.com/NeuroFlame/nfc-label-noise-filtering](https://github.com/NeuroFlame/nfc-label-noise-filtering)
+**Source code:** [https://github.com/NeuroFlame/nfc-label-noise-filtering-halfpipe](https://github.com/NeuroFlame/nfc-label-noise-filtering-halfpipe)
 
 &nbsp;
 
@@ -16,17 +16,17 @@ This paper presents Fed LAMP, a label noise filtering based dimensional predicti
   "LabelThreshold": 2,
   "TypicalThreshold": 0.8,
   "TruncationParameter": 0.2,
-  "ControlLabel": "HC",
-  "PatientLabel": "SZ",
-  "LabelFile" : "labels.csv",
-  "ExistingDataFile" : "data.csv",
+  "ControlLabel": 2,
+  "PatientLabel": 1,
+  "LabelFile": "participants.csv",
+  "QCFile": "qc.csv",
   "ReadDataFileFromHalfpipeOutputs": {
-    "atlas": "schaefer2011",
-    "corr": "corrMatrix"
+    "atlas": "NeuroMark1",
+    "task": "rest"
   },
-  "FNCDomainNames" :  [0, 5, 7, 16, 25, 42, 49, 53],
-  "IgnoreSubjectsWithMissingData" : true,
-  "LogLevel": "error"
+  "FNCDomainNames": [0, 5, 7, 16, 25, 42, 49, 53],
+  "IgnoreSubjectsWithMissingData": true,
+  "LogLevel": "info"
 }
 ```
 
@@ -42,28 +42,58 @@ This paper presents Fed LAMP, a label noise filtering based dimensional predicti
 | `TruncationParameter` | `float`   | It trims the extreme x% from both sides of the negative and positive score distributions before computing the boundary threshold. | float             | 0.2     | ✅ true                                                            |
 | `ControlLabel`        | `str or int` | Label used to indicate healthy controls in the dataset| String or integer | -       | ✅ true                                                            |
 | `PatientLabel`        | `str or int` | Label used to indicate patients or unhealthy subjects| integer           | -       | ✅ true                                                            |
-| `LabelFile`    | `str`        | Name of the label file in csv format. This file should contain headers "subject_id" and "diagnosis"| string            | -       | ✅ true                                                            |
+| `LabelFile` | `str` | Participants file in the site folder, with a `subject_id` (or `participant_id`) column and a `diagnosis` column; other columns are ignored. For HALFpipe derivatives, `participants.csv` and then `participants.tsv` are used if this file is not found. | string | - | ✅ true |
+| `QCFile` | `str` | HALFpipe derivatives only: per-run QC file in the site folder with columns `subject_id`, `session`, `run`, `include` (yes/no). If it is missing, every run found is used. | string | `qc.csv` | ❌ false |
 | `ExistingDataFile`        | `str`        | Name of the csv file containing data of all the subjects (subjects * data). For FNC, the data is the linearized upper traingular data of the FNC matrix. Either this or the Halfpipe outputs should be provided for data. Should not contain any header. | string            | -       | ✅ true (if halfpipe outputs are not provided) ❌ false (otherwise) |
-| `ReadDataFileFromHalfpipeOutputs`        | `dict`       | Reads the output files directly from halfpipe output folder based on the atlas and correlation type provided. Either this or  "ExistingDataFile" should be provided for data| dict              | -       | ✅ true (if data file is not provided) ❌ false (otherwise)         |
+| `ReadDataFileFromHalfpipeOutputs` | `dict` | Read HALFpipe correlation matrices. `atlas` (required) is the atlas name as it appears in filenames, the same at every site (for example `NeuroMark1`). `task` defaults to `rest`. `feature` (alias `corr`) is only needed if a site has the same atlas under two feature names. Either this or `ExistingDataFile` must be provided. | dict | - | ✅ true (if data file is not provided) ❌ false (otherwise) |
 | `IgnoreSubjectsWithMissingData`    | bool        | Ignore or fail the run if any of the subjects with empty or missing values       | bool              | false   | ✅ true                                                            |
 | `FNCDomainNames`    | `list`        | Domain names of FNC data used for displaying while rendering FNC data  | string            | []     | ✅ true                                                            |
 | `LogLevel`    | `str`        | Logs the errors. Value either "info" or "error"       | string            | "info"   | ❌false                                                            |
 
 ### Input Description
 
-Each site is required to data and labels files:
+Each site provides one of the following.
 
-**Format -1 :** 
+**Format 1: HALFpipe derivatives (nested, as HALFpipe writes them)**
 
-- `data.csv` —  filename can vary and can be configured in _parameters.json_. Each row has vectorized upper triangular FNC data for that subject. The subject ordering in this file should match exactly with labels.csv file.
-- `labels.csv` —  filename can vary and can be configured in _parameters.json_. File with headers "_subject_id_" and "_diagnosis_" and contain label for each subject and its diagnosis as per '_ControlLabel_' or '_PatientLabel_' mentioned in parameters. The subject ordering in this file and the data csv file such match exactly. )
+```
+<site data folder>/
+├── participants.csv | participants.tsv   subject_id (or participant_id), …, diagnosis
+├── qc.csv                                 optional: subject_id, session, run, include
+└── <any folder name>/                      HALFpipe derivatives, any depth
+    └── sub-<ID>/
+        └── ses-<S>/                        optional
+            └── func/task-rest/
+                ├── sub-<ID>_ses-<S>_task-rest_run-1_feature-<f>_atlas-<atlas>_desc-correlation_matrix.tsv
+                └── sub-<ID>_ses-<S>_task-rest_run-2_feature-<f>_atlas-<atlas>_desc-correlation_matrix.tsv
+```
 
-Sample files are available in `test_data/site1/` and `test_data/site2/`.
+At the start of the run, each subject's correlation matrices for the configured atlas are combined into one matrix and the analysis proceeds as for Format 2:
 
+- **Which runs are used:** with `qc.csv`, only runs marked `include` = yes. Every run found on disk for a participant must have a row (yes or no), and every row marked yes must match a file; otherwise the site stops with a list to fix. Without `qc.csv`, every run found is used.
+- **How runs are combined:** Fisher-z average of all included runs across all included sessions (`tanh(mean(arctanh(r)))`). An ROI pair missing in one run is averaged from the others. To keep longitudinal visits apart, include only the wanted session in `qc.csv`.
+- **Matching:** subject IDs match with or without `sub-` and regardless of case (`01` matches `sub-01`); sessions match with or without `ses-`; runs match as numbers (`1`, `01`, `run-01`).
+- **Ignored files:** other atlases, covariance and timeseries files, and stray copies (for example `… copy.tsv`).
+- **Site output:** `qc_summary.csv` lists, for each participant, the sessions and runs used and excluded. It stays at the site.
 
-**Format - 2 :** 
-- `Halfpipe output folder` - This folder should contain FNC files for each subject in tsv format. The subject id with which the file name starts with should be mentioned in _labels.csv_. The atlas and correlation matrix that are needed for filename selction should be provided _ReadDataFileFromHalfpipeOutputs_ in parameters.json.
-- `labels.csv` —  filename can vary and can be configured in _parameters.json_. File with headers "_subject_id_" and "_diagnosis_" and contain label for each subject and its diagnosis as per '_ControlLabel_' or '_PatientLabel_' mentioned in parameters. Make sure the 'subject_id' contains the subject id with which the filename in halfpipe outputs starts with. )
+```csv
+subject_id,session,run,include
+sub-PHCPP1011968,ses-V1A,1,yes
+sub-PHCPP1011968,ses-V1A,2,no
+sub-PHCPP1011968,ses-V1B,1,yes
+```
+
+Sample sites are in `test_data/site1/` (two sessions, `qc.csv`), `test_data/site2/` (no sessions, `participants.tsv`, no QC file) and `test_data/site3/` (one session, `qc.csv`, distractor files). They are generated by `scripts/generate_nested_test_data.py`.
+
+**Format 2: flat folder of HALFpipe matrices**
+
+- One `<subject_id>_task-rest_feature-<corr>_atlas-<atlas>CombinedDseg_desc-correlation_matrix.tsv` per subject at the top level of the site folder, with `ReadDataFileFromHalfpipeOutputs` naming `atlas` and `corr`.
+- `labels.csv` (or the configured `LabelFile`) with headers `subject_id` and `diagnosis`; each `subject_id` is the prefix of its matrix filename.
+
+**Format 3: data file**
+
+- `data.csv` (`ExistingDataFile`): one row per subject with the vectorized upper-triangular FNC values, no header.
+- `labels.csv` (`LabelFile`): headers `subject_id` and `diagnosis`, in the same subject order as `data.csv`.
 
 ### Algorithm Description
 

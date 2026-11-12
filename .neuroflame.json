@@ -8,10 +8,10 @@
     "boilerplateVersion": "0.1.0"
   },
   "image": {
-    "title": "nfc-label-noise-filtering",
-    "repository": "coinstacteam/nfc-label-noise-filtering",
+    "title": "nfc-label-noise-filtering-halfpipe",
+    "repository": "coinstacteam/nfc-label-noise-filtering-halfpipe",
     "floatingTag": "latest",
     "tagPrefix": "",
-    "source": "https://github.com/NeuroFlame/nfc-label-noise-filtering"
+    "source": "https://github.com/NeuroFlame/nfc-label-noise-filtering-halfpipe"
   }
 }

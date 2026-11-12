@@ -166,15 +166,15 @@ def validate_and_get_inputs(data_dir, parameters, logger):
 
         # Make sure there is data for both the labels
         logger.debug("Checking data lengths for each label")
-        clean_patient_data = combined_df[ct.PARAM_KEY_DIAGNOSIS]== ct.PATIENT_LABEL_VALUE
-        clean_control_data = combined_df[ct.PARAM_KEY_DIAGNOSIS]== ct.PATIENT_LABEL_VALUE
+        clean_patient_count = int((combined_df[ct.PARAM_KEY_DIAGNOSIS] == ct.PATIENT_LABEL_VALUE).sum())
+        clean_control_count = int((combined_df[ct.PARAM_KEY_DIAGNOSIS] == ct.CONTROL_LABEL_VALUE).sum())
 
-        if len(clean_patient_data) == 0 or len(clean_control_data) == 0:
+        if clean_patient_count == 0 or clean_control_count == 0:
             err_msg = "Both groups need at least one subject. "
-            if len(clean_patient_data) == 0:
-                err_msg += f" Number of patients after validation = 0. "
-            if len(clean_control_data) == 0:
-                err_msg += f" Number of controls after validation = 0. "
+            if clean_patient_count == 0:
+                err_msg += " Number of patients after validation = 0. "
+            if clean_control_count == 0:
+                err_msg += " Number of controls after validation = 0. "
             logger.error(err_msg+"\n\n")
             return False, None
 
