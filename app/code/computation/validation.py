@@ -1,14 +1,15 @@
 """Validate one site's FNC data/labels CSVs against the computation parameters."""
+
+import glob
 import logging
 import os
-import glob
-
 from distutils.util import strtobool
 
 import numpy as np
 import pandas as pd
 
 from . import constants as ct
+
 
 def validate_and_get_inputs(data_dir, parameters, logger):
     """Validate a site's ``data.csv``/``labels.csv`` and return the combined array.
@@ -18,7 +19,7 @@ def validate_and_get_inputs(data_dir, parameters, logger):
     ``(False, None)`` after logging the reason.
     """
     try:
-        #logger.info("Received parameters: ", str(parameters))
+        # logger.info("Received parameters: ", str(parameters))
         logger.info("Performing validation of inputs...")
         ignore_subjects_with_missing_entries = parameters.get(
             "IgnoreSubjectsWithMissingData",
@@ -33,18 +34,24 @@ def validate_and_get_inputs(data_dir, parameters, logger):
 
         label_filename = parameters["LabelFile"]
         # 1. Load the labels CSV with specific columns
-        labels_df = pd.read_csv(os.path.join(data_dir, label_filename),
-                         usecols=[ct.PARAM_KEY_SUBJECT_ID,
-                                  ct.PARAM_KEY_DIAGNOSIS])
+        labels_df = pd.read_csv(
+            os.path.join(data_dir, label_filename),
+            usecols=[ct.PARAM_KEY_SUBJECT_ID, ct.PARAM_KEY_DIAGNOSIS],
+        )
 
         if not ignore_subjects_with_missing_entries:
-            has_empty_cells = labels_df.astype(str).apply(lambda x: x.str.strip()).isin([""]).values.any()
+            has_empty_cells = (
+                labels_df.astype(str)
+                .apply(lambda x: x.str.strip())
+                .isin([""])
+                .values.any()
+            )
             has_nans = labels_df.isna().values.any()
             if has_nans or has_empty_cells:
                 error_message = (
                     f"\n There are some NAN or cells with no values in  '{label_filename}'. "
                     f"Please correct and reupload.\n\n"
-                    )
+                )
                 logger.error(error_message)
                 return False, None
         else:
@@ -61,8 +68,8 @@ def validate_and_get_inputs(data_dir, parameters, logger):
             data_df[ct.PARAM_KEY_SUBJECT_ID] = range(1, len(data_df) + 1)
             labels_df[ct.PARAM_KEY_SUBJECT_ID] = range(1, len(labels_df) + 1)
 
-            #logger.info(f"Data file headers : {str(data_df.columns.tolist())}\n")
-        except Exception :
+            # logger.info(f"Data file headers : {str(data_df.columns.tolist())}\n")
+        except Exception:
             logger.info("Loading Subject specific FNCs data_file")
 
             # Data file is missing.. try loading all subject files from the directory
@@ -104,9 +111,10 @@ def validate_and_get_inputs(data_dir, parameters, logger):
             logger.error(error_message)
             return False, None
 
-
         # Ensure that values in label file are the ones listed in "LabelDefinition" parameters
-        unique_label_list_in_data = set(labels_df[ct.PARAM_KEY_DIAGNOSIS].unique().tolist())
+        unique_label_list_in_data = set(
+            labels_df[ct.PARAM_KEY_DIAGNOSIS].unique().tolist()
+        )
         unique_label_list_in_desc = set([patient_label, control_label])
 
         if not unique_label_list_in_data.issubset(unique_label_list_in_desc):
@@ -119,15 +127,22 @@ def validate_and_get_inputs(data_dir, parameters, logger):
             return False, None
 
         # Convert the labels of patients & controls to the 1 and 2 respectively
-        labels_df[ct.PARAM_KEY_DIAGNOSIS] = labels_df[ct.PARAM_KEY_DIAGNOSIS].replace(f"(?i)^{patient_label}$",
-                                                                            ct.PATIENT_LABEL_VALUE, regex=True)
-        labels_df[ct.PARAM_KEY_DIAGNOSIS] = labels_df[ct.PARAM_KEY_DIAGNOSIS].replace(f"(?i)^{control_label}$",
-                                                                            ct.CONTROL_LABEL_VALUE, regex=True)
-        #logger.debug(f"updated labels : {str(labels_df.head(2))}")
+        labels_df[ct.PARAM_KEY_DIAGNOSIS] = labels_df[ct.PARAM_KEY_DIAGNOSIS].replace(
+            f"(?i)^{patient_label}$", ct.PATIENT_LABEL_VALUE, regex=True
+        )
+        labels_df[ct.PARAM_KEY_DIAGNOSIS] = labels_df[ct.PARAM_KEY_DIAGNOSIS].replace(
+            f"(?i)^{control_label}$", ct.CONTROL_LABEL_VALUE, regex=True
+        )
+        # logger.debug(f"updated labels : {str(labels_df.head(2))}")
 
         logger.debug("Merging two dfs\n\n")
-        combined_df = pd.merge(data_df, labels_df, left_on=ct.PARAM_KEY_SUBJECT_ID,
-                                right_on=ct.PARAM_KEY_SUBJECT_ID, how='inner')
+        combined_df = pd.merge(
+            data_df,
+            labels_df,
+            left_on=ct.PARAM_KEY_SUBJECT_ID,
+            right_on=ct.PARAM_KEY_SUBJECT_ID,
+            how="inner",
+        )
 
         logger.debug("Completed Merging two dfs\n\n")
 
@@ -151,7 +166,6 @@ def validate_and_get_inputs(data_dir, parameters, logger):
                 logger.info(
                     "-- Ignored following rows with incorrect/missing values: "
                     f"{str(combined_df.index[all_rows_to_ignore].tolist())}"
-
                 )
                 combined_df.drop(combined_df.index[all_rows_to_ignore], inplace=True)
             else:
@@ -166,8 +180,12 @@ def validate_and_get_inputs(data_dir, parameters, logger):
 
         # Make sure there is data for both the labels
         logger.debug("Checking data lengths for each label")
-        clean_patient_count = int((combined_df[ct.PARAM_KEY_DIAGNOSIS] == ct.PATIENT_LABEL_VALUE).sum())
-        clean_control_count = int((combined_df[ct.PARAM_KEY_DIAGNOSIS] == ct.CONTROL_LABEL_VALUE).sum())
+        clean_patient_count = int(
+            (combined_df[ct.PARAM_KEY_DIAGNOSIS] == ct.PATIENT_LABEL_VALUE).sum()
+        )
+        clean_control_count = int(
+            (combined_df[ct.PARAM_KEY_DIAGNOSIS] == ct.CONTROL_LABEL_VALUE).sum()
+        )
 
         if clean_patient_count == 0 or clean_control_count == 0:
             err_msg = "Both groups need at least one subject. "
@@ -175,13 +193,15 @@ def validate_and_get_inputs(data_dir, parameters, logger):
                 err_msg += " Number of patients after validation = 0. "
             if clean_control_count == 0:
                 err_msg += " Number of controls after validation = 0. "
-            logger.error(err_msg+"\n\n")
+            logger.error(err_msg + "\n\n")
             return False, None
 
         combined_data_and_labels = combined_df.to_numpy()
         logger.info("\nData validation passed for the data.")
-        logger.info(f"Number of data entries after validation: {len(combined_df)}. Running next steps.\n\n")
-        #logger.info(f"printing labels: {str(combined_data_and_labels[-1])}")
+        logger.info(
+            f"Number of data entries after validation: {len(combined_df)}. Running next steps.\n\n"
+        )
+        # logger.info(f"printing labels: {str(combined_data_and_labels[-1])}")
 
         return True, combined_data_and_labels
 
@@ -192,33 +212,30 @@ def validate_and_get_inputs(data_dir, parameters, logger):
 
 
 def load_subject_fnc_files(subject_ids, data_dir, parameters):
-    '''
-    Reads the tsv file with FNC data for each subject and then extracts the upper triangular data of that subject.
-    '''
-
+    """Read each subject's FNC TSV and keep its upper-triangle values."""
     atlas = parameters["ReadDataFileFromHalfpipeOutputs"]["atlas"]
     corr_matrix = parameters["ReadDataFileFromHalfpipeOutputs"]["corr"]
-    #Loop through and load the matching TSV files
+    # Loop through and load the matching TSV files
     tsv_list = []
     missing_files = []
     for sub_id in subject_ids:
         # Construct the filename (adjust pattern if your files have a prefix/suffix)
         tsv_filename = f"{sub_id}_task-rest_feature-{corr_matrix}_atlas-{atlas}CombinedDseg_desc-correlation_matrix.tsv"
 
-        #This works only in python 3.12+
-        #files = glob.glob(os.path.join(data_dir, tsv_filename), case_sensitive=False)
+        # This works only in python 3.12+
+        # files = glob.glob(os.path.join(data_dir, tsv_filename), case_sensitive=False)
         files = _case_insensitive_glob(os.path.join(data_dir, tsv_filename))
-        #print(files)
+        # print(files)
 
         # Check if the file exists before attempting to read it
         if files:
-            assert len(files) == 1 , f"Found multiple files for subject. {files}\n\n"
+            assert len(files) == 1, f"Found multiple files for subject. {files}\n\n"
             tsv_filename = files[0]
             # Read the TSV file using tab separation
             subj_fnc_matrix = np.genfromtxt(tsv_filename, delimiter="\t")
 
-            #subj_fnc_matrix_df = pd.read_csv(tsv_filename, sep="\t", header=None)
-            #subj_fnc_matrix = subj_fnc_matrix_df.to_numpy(dtype=float)
+            # subj_fnc_matrix_df = pd.read_csv(tsv_filename, sep="\t", header=None)
+            # subj_fnc_matrix = subj_fnc_matrix_df.to_numpy(dtype=float)
 
             # Extracts the upper triangular elements excluding the diagonal
             row_idx, col_idx = np.triu_indices(subj_fnc_matrix.shape[0], k=1)
@@ -226,9 +243,8 @@ def load_subject_fnc_files(subject_ids, data_dir, parameters):
         else:
             missing_files.append(tsv_filename)
 
-
     if missing_files:
-        display_missing_files = '\n'.join(missing_files)
+        display_missing_files = "\n".join(missing_files)
         logging.error(f"Following subject files not found: {display_missing_files}\n\n")
         return None
 
@@ -267,10 +283,11 @@ def _trim_all_object_columns(df):
     df[obj_cols] = df[obj_cols].apply(lambda x: x.str.strip())
     return df
 
+
 def _case_insensitive_glob(pattern):
     # Example usage:
     # This will match test.txt, TEST.TXT, Test.Txt, etc.
-    #files = _case_insensitive_glob("path/to/folder/*.txt")
+    # files = _case_insensitive_glob("path/to/folder/*.txt")
 
     # Converts 'a' to '[aA]' and 'A' to '[aA]' for all alphabetical characters
     case_insensitive_pattern = "".join(
@@ -278,6 +295,6 @@ def _case_insensitive_glob(pattern):
     )
     return glob.glob(case_insensitive_pattern)
 
+
 def _get_user_row_numbers(df_index_list):
     return [ri + 1 for ri in df_index_list]
-

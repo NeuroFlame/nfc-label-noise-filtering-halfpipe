@@ -31,13 +31,17 @@ def aggregate_centroids(
     fnc_counts = {name: site_results[name].fnc_count for name in sorted_names}
     global_avg_fnc_original = global_mean_from_sites(fnc_sums, fnc_counts)
 
-    domain_names = parameters.get(constants.PARAM_KEY_FNC_DOMAIN_NAMES, constants.DEFAULT_FNCDomainNames)
+    domain_names = parameters.get(
+        constants.PARAM_KEY_FNC_DOMAIN_NAMES, constants.DEFAULT_FNCDomainNames
+    )
     global_result_dir = os.path.join(output_dir, "global_results")
     os.makedirs(global_result_dir, exist_ok=True)
 
-    patient_label =  parameters[constants.PARAM_KEY_PATIENT_LABEL] #label1
-    control_label =  parameters[constants.PARAM_KEY_CONTROL_LABEL]
-    label_def = constants.get_label_definitions(patient_label=patient_label, control_label=control_label)
+    patient_label = parameters[constants.PARAM_KEY_PATIENT_LABEL]  # label1
+    control_label = parameters[constants.PARAM_KEY_CONTROL_LABEL]
+    label_def = constants.get_label_definitions(
+        patient_label=patient_label, control_label=control_label
+    )
 
     for label, matrix in global_avg_fnc_original.items():
         label_name = label_def[label]["name"]
@@ -115,11 +119,15 @@ def aggregate_relabeled_metrics(
     fnc_counts = {name: site_results[name].fnc_count for name in sorted_names}
     global_avg_fnc_relabeled = global_mean_from_sites(fnc_sums, fnc_counts)
 
-    patient_label =  parameters[constants.PARAM_KEY_PATIENT_LABEL] #label1
-    control_label =  parameters[constants.PARAM_KEY_CONTROL_LABEL]
-    label_def = constants.get_label_definitions(patient_label=patient_label, control_label=control_label)
+    patient_label = parameters[constants.PARAM_KEY_PATIENT_LABEL]  # label1
+    control_label = parameters[constants.PARAM_KEY_CONTROL_LABEL]
+    label_def = constants.get_label_definitions(
+        patient_label=patient_label, control_label=control_label
+    )
 
-    domain_names = parameters.get(constants.PARAM_KEY_FNC_DOMAIN_NAMES, constants.DEFAULT_FNCDomainNames)
+    domain_names = parameters.get(
+        constants.PARAM_KEY_FNC_DOMAIN_NAMES, constants.DEFAULT_FNCDomainNames
+    )
     global_result_dir = os.path.join(output_dir, "global_results")
     os.makedirs(global_result_dir, exist_ok=True)
     for label, matrix in global_avg_fnc_relabeled.items():
@@ -148,7 +156,9 @@ def check_matching_fnc_shapes(site_results: Dict[str, CrfLocalResult]):
         if sums:
             shapes[name] = np.asarray(next(iter(sums.values()))).shape
     if len(set(shapes.values())) > 1:
-        detail = ", ".join(f"{name}: {'x'.join(map(str, shape))}" for name, shape in shapes.items())
+        detail = ", ".join(
+            f"{name}: {'x'.join(map(str, shape))}" for name, shape in shapes.items()
+        )
         raise ValueError(
             "Sites sent FNC matrices of different sizes, so they did not use the same atlas "
             f"({detail}). Every site must use the atlas set in the computation parameters."

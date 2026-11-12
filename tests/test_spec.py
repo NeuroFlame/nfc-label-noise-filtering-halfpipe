@@ -76,7 +76,9 @@ class ComputeDimensionalScoresTests(unittest.TestCase):
             },
         )
 
-        result = compute_dimensional_scores(global_result, state=state, cache_dir=cache_dir)
+        result = compute_dimensional_scores(
+            global_result, state=state, cache_dir=cache_dir
+        )
         payload, next_state = result.payload, result.state
 
         self.assertEqual(next_state["my_name"], "site2")

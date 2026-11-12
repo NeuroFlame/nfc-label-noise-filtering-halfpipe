@@ -1,4 +1,5 @@
 """Site-side math: local CRF/centroids, dimensional scoring, and relabeling."""
+
 import os
 
 import numpy as np
@@ -30,7 +31,9 @@ _CRF_SEED = 20250908
 LOCAL_CACHE_DATA_FILE = "local_cache_data_file.npy"
 
 
-def compute_local_crf(inputs: ValidatedInputs, *, parameters, logger, output_dir, cache_dir):
+def compute_local_crf(
+    inputs: ValidatedInputs, *, parameters, logger, output_dir, cache_dir
+):
     """Run the local CRF step: typical-subject centroids + local FNC averages."""
     data = inputs.data
     rng = Generator(PCG64(SeedSequence(_CRF_SEED)))
@@ -38,9 +41,11 @@ def compute_local_crf(inputs: ValidatedInputs, *, parameters, logger, output_dir
     X = get_complete_FNC_matrix_data(data[:, :-1])
     y = data[:, -1]
 
-    patient_label =  parameters[constants.PARAM_KEY_PATIENT_LABEL] #label1
-    control_label =  parameters[constants.PARAM_KEY_CONTROL_LABEL]
-    label_def = constants.get_label_definitions(patient_label=patient_label, control_label=control_label)
+    patient_label = parameters[constants.PARAM_KEY_PATIENT_LABEL]  # label1
+    control_label = parameters[constants.PARAM_KEY_CONTROL_LABEL]
+    label_def = constants.get_label_definitions(
+        patient_label=patient_label, control_label=control_label
+    )
 
     domain_names = parameters.get("FNCDomainNames", constants.DEFAULT_FNCDomainNames)
 
@@ -98,11 +103,15 @@ def compute_local_crf(inputs: ValidatedInputs, *, parameters, logger, output_dir
     return with_state(payload, state)
 
 
-def compute_dimensional_scores(global_result: GlobalCentroidResult, *, state, cache_dir):
+def compute_dimensional_scores(
+    global_result: GlobalCentroidResult, *, state, cache_dir
+):
     """Compute each subject's dimensional score against every site's centroids."""
     my_name = global_result.token_to_name[state["self_token"]]
 
-    data = np.load(cache_file(LOCAL_CACHE_DATA_FILE, cache_dir=cache_dir), allow_pickle=False)
+    data = np.load(
+        cache_file(LOCAL_CACHE_DATA_FILE, cache_dir=cache_dir), allow_pickle=False
+    )
 
     original_labels = data[:, -1]
 
@@ -145,21 +154,29 @@ def relabel_subjects(threshold, *, state, parameters, logger, output_dir, cache_
     """Apply the adaptive threshold, then recompute FNC averages on relabeled subjects."""
     average_score = state["average_score"]
 
-    data = np.load(cache_file(LOCAL_CACHE_DATA_FILE, cache_dir=cache_dir), allow_pickle=False)
+    data = np.load(
+        cache_file(LOCAL_CACHE_DATA_FILE, cache_dir=cache_dir), allow_pickle=False
+    )
 
-    patient_label = parameters[constants.PARAM_KEY_PATIENT_LABEL] #label1
+    patient_label = parameters[constants.PARAM_KEY_PATIENT_LABEL]  # label1
     control_label = parameters[constants.PARAM_KEY_CONTROL_LABEL]
-    label_def = constants.get_label_definitions(patient_label=patient_label, control_label=control_label)
+    label_def = constants.get_label_definitions(
+        patient_label=patient_label, control_label=control_label
+    )
 
     total_subjects = average_score.shape[0]
-    re_labels = np.full(total_subjects, constants.BOUNDARY_SUBJECT_LABEL_VALUE, dtype=float)
+    re_labels = np.full(
+        total_subjects, constants.BOUNDARY_SUBJECT_LABEL_VALUE, dtype=float
+    )
     mask_sz = average_score < -threshold
     mask_hc = average_score > threshold
     re_labels[mask_sz] = constants.PATIENT_LABEL_VALUE
     re_labels[mask_hc] = constants.CONTROL_LABEL_VALUE
 
-    logger.info(f"Site metrices after relabeling: \n Patient count: {np.sum(mask_sz)}; \Control count: {np.sum(mask_hc)};"
-                f" \Boundary count:{total_subjects - np.sum(mask_sz) - np.sum(mask_hc)} \n\n")
+    logger.info(
+        f"Site metrices after relabeling: \n Patient count: {np.sum(mask_sz)}; \\Control count: {np.sum(mask_hc)};"
+        f" \\Boundary count:{total_subjects - np.sum(mask_sz) - np.sum(mask_hc)} \n\n"
+    )
 
     scores_df = _build_scores_dataframe(state["site_scores"], average_score, re_labels)
     scores_df.to_csv(f"{output_dir}/relabeled.csv")
@@ -180,7 +197,9 @@ def relabel_subjects(threshold, *, state, parameters, logger, output_dir, cache_
     )
 
     unique_labels = np.unique(re_labels).astype(int)
-    unique_labels = unique_labels[unique_labels != constants.BOUNDARY_SUBJECT_LABEL_VALUE]
+    unique_labels = unique_labels[
+        unique_labels != constants.BOUNDARY_SUBJECT_LABEL_VALUE
+    ]
     avg_fnc, local_sum_count = average_fnc_by_label(X, re_labels, unique_labels)
     for label in unique_labels:
         label_name = label_def[str(label)]["name"]
@@ -223,7 +242,9 @@ def compute_two_sample_ttest(dataset, labels12=None):
     """Welch's t-test per FNC cell, comparing HC vs. SZ subjects."""
     group_sz, group_hc = split_dataset(dataset, labels12)
     if group_sz.size == 0 or group_hc.size == 0:
-        raise ValueError(f"Both groups need at least one subject. \nPatient group size: {group_sz.size}; Control group size: {group_hc.size}")
+        raise ValueError(
+            f"Both groups need at least one subject. \nPatient group size: {group_sz.size}; Control group size: {group_hc.size}"
+        )
     return ttest_ind(group_hc, group_sz, axis=0, equal_var=False, nan_policy="omit")
 
 
@@ -327,4 +348,3 @@ def get_centroids(subject_data, subject_label_count, typical_threshold):
         "center_hc": center_hc,
         "selected_features": selected_features,
     }
-

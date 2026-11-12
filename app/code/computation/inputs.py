@@ -36,7 +36,9 @@ def load_inputs(data_dir, parameters, logger, cache_dir, output_dir):
             )
         except HalfpipeInputError as error:
             logger.error(f"{error}\n\n")
-            raise ValueError("Invalid run input; see the site log for validation details") from error
+            raise ValueError(
+                "Invalid run input; see the site log for validation details"
+            ) from error
 
     is_valid, data = validate_and_get_inputs(data_dir, parameters, logger)
     if not is_valid:

@@ -39,8 +39,16 @@ _MATRIX_NAME = re.compile(
     r"^sub-[A-Za-z0-9]+(?:_[A-Za-z]+-[A-Za-z0-9]+)*" + re.escape(MATRIX_SUFFIX) + r"$"
 )
 _FISHER_CLIP = 0.999999
-_INCLUDE_VALUES = {"yes": True, "y": True, "true": True, "1": True,
-                   "no": False, "n": False, "false": False, "0": False}
+_INCLUDE_VALUES = {
+    "yes": True,
+    "y": True,
+    "true": True,
+    "1": True,
+    "no": False,
+    "n": False,
+    "false": False,
+    "0": False,
+}
 
 
 class HalfpipeInputError(ValueError):
@@ -81,6 +89,7 @@ class SubjectSummary:
 # Normalization
 # --------------------------------------------------------------------------
 
+
 def normalize_subject(value) -> str:
     """Lower-case a subject ID and drop an optional ``sub-`` prefix."""
     text = str(value).strip()
@@ -109,13 +118,19 @@ def normalize_run(value) -> Optional[int]:
     if text == "":
         return None
     if not text.isdigit():
-        raise HalfpipeInputError(f"Invalid run value {value!r}; expected a run number such as 1, 01 or run-01")
+        raise HalfpipeInputError(
+            f"Invalid run value {value!r}; expected a run number such as 1, 01 or run-01"
+        )
     return int(text)
 
 
 def _label(item: "MatrixFile") -> str:
     """``sub-X[_ses-Y][_run-Z]`` spelled as in the source filename."""
-    return "_".join(f"{key}-{item.entities[key]}" for key in ("sub", "ses", "run") if key in item.entities)
+    return "_".join(
+        f"{key}-{item.entities[key]}"
+        for key in ("sub", "ses", "run")
+        if key in item.entities
+    )
 
 
 def _describe(key: RunKey) -> str:
@@ -130,6 +145,7 @@ def _describe(key: RunKey) -> str:
 # --------------------------------------------------------------------------
 # Detection and discovery
 # --------------------------------------------------------------------------
+
 
 def get_halfpipe_settings(parameters) -> Tuple[str, str, Optional[str]]:
     """Return ``(atlas, task, feature)`` from ``ReadDataFileFromHalfpipeOutputs``."""
@@ -162,7 +178,9 @@ def parse_matrix_filename(filename: str) -> Optional[Dict[str, str]]:
     return entities
 
 
-def discover_matrices(data_dir, atlas, task, feature=None, *, nested_only=False) -> List[MatrixFile]:
+def discover_matrices(
+    data_dir, atlas, task, feature=None, *, nested_only=False
+) -> List[MatrixFile]:
     """Find every correlation matrix for the configured atlas/task (and feature, if set)."""
     found = []
     for root, dirs, files in os.walk(data_dir):
@@ -184,7 +202,9 @@ def discover_matrices(data_dir, atlas, task, feature=None, *, nested_only=False)
                 session=normalize_session(entities.get("ses")),
                 run=normalize_run(entities.get("run")),
             )
-            found.append(MatrixFile(path=os.path.join(root, name), key=key, entities=entities))
+            found.append(
+                MatrixFile(path=os.path.join(root, name), key=key, entities=entities)
+            )
     return found
 
 
@@ -200,9 +220,12 @@ def is_nested_halfpipe_dataset(data_dir, parameters) -> bool:
 # Participants and QC files
 # --------------------------------------------------------------------------
 
+
 def _read_table(path) -> pd.DataFrame:
     sep = "\t" if path.lower().endswith(".tsv") else ","
-    return pd.read_csv(path, sep=sep, dtype=str, keep_default_na=False, encoding="utf-8-sig")
+    return pd.read_csv(
+        path, sep=sep, dtype=str, keep_default_na=False, encoding="utf-8-sig"
+    )
 
 
 def find_participants_file(data_dir, parameters) -> str:
@@ -226,15 +249,21 @@ def load_participants(path) -> pd.DataFrame:
             f"{os.path.basename(path)} needs a 'subject_id' (or 'participant_id') column and a 'diagnosis' column; "
             f"found {list(table.columns)}"
         )
-    participants = pd.DataFrame({
-        "subject_id": table[id_column].str.strip(),
-        "key": table[id_column].map(normalize_subject),
-        "diagnosis": table[ct.PARAM_KEY_DIAGNOSIS].str.strip(),
-    })
+    participants = pd.DataFrame(
+        {
+            "subject_id": table[id_column].str.strip(),
+            "key": table[id_column].map(normalize_subject),
+            "diagnosis": table[ct.PARAM_KEY_DIAGNOSIS].str.strip(),
+        }
+    )
     participants = participants[participants["subject_id"] != ""]
-    duplicates = participants[participants["key"].duplicated(keep=False)]["subject_id"].tolist()
+    duplicates = participants[participants["key"].duplicated(keep=False)][
+        "subject_id"
+    ].tolist()
     if duplicates:
-        raise HalfpipeInputError(f"Duplicate subjects in {os.path.basename(path)}: {sorted(set(duplicates))}")
+        raise HalfpipeInputError(
+            f"Duplicate subjects in {os.path.basename(path)}: {sorted(set(duplicates))}"
+        )
     return participants.reset_index(drop=True)
 
 
@@ -244,7 +273,9 @@ def load_qc(path) -> Dict[RunKey, bool]:
     table.columns = [c.strip().lower() for c in table.columns]
     missing = {"subject_id", "include"} - set(table.columns)
     if missing:
-        raise HalfpipeInputError(f"{os.path.basename(path)} is missing required column(s): {sorted(missing)}")
+        raise HalfpipeInputError(
+            f"{os.path.basename(path)} is missing required column(s): {sorted(missing)}"
+        )
 
     decisions: Dict[RunKey, bool] = {}
     errors = []
@@ -262,13 +293,17 @@ def load_qc(path) -> Dict[RunKey, bool]:
             continue
         include = _INCLUDE_VALUES.get(str(row["include"]).strip().lower())
         if include is None:
-            errors.append(f"line {line_number} ({_describe(key)}): include must be yes or no, got {row['include']!r}")
+            errors.append(
+                f"line {line_number} ({_describe(key)}): include must be yes or no, got {row['include']!r}"
+            )
         elif key in decisions:
             errors.append(f"line {line_number}: duplicate row for {_describe(key)}")
         else:
             decisions[key] = include
     if errors:
-        raise HalfpipeInputError(f"{os.path.basename(path)} has problems:\n  " + "\n  ".join(errors))
+        raise HalfpipeInputError(
+            f"{os.path.basename(path)} has problems:\n  " + "\n  ".join(errors)
+        )
     return decisions
 
 
@@ -276,11 +311,14 @@ def load_qc(path) -> Dict[RunKey, bool]:
 # Averaging
 # --------------------------------------------------------------------------
 
+
 def load_matrix(path) -> np.ndarray:
     """Read one square correlation matrix TSV."""
     matrix = np.genfromtxt(path, delimiter="\t")
     if matrix.ndim != 2 or matrix.shape[0] != matrix.shape[1]:
-        raise HalfpipeInputError(f"{path} is not a square matrix (shape {matrix.shape})")
+        raise HalfpipeInputError(
+            f"{path} is not a square matrix (shape {matrix.shape})"
+        )
     return matrix
 
 
@@ -300,7 +338,9 @@ def fisher_z_average(matrices: List[np.ndarray]) -> np.ndarray:
 
 
 def _write_matrix(path, matrix):
-    rows = ["\t".join("nan" if np.isnan(x) else f"{x:.10f}" for x in row) for row in matrix]
+    rows = [
+        "\t".join("nan" if np.isnan(x) else f"{x:.10f}" for x in row) for row in matrix
+    ]
     with open(path, "w", encoding="utf-8") as handle:
         handle.write("\n".join(rows))
 
@@ -309,21 +349,26 @@ def _write_matrix(path, matrix):
 # Staging
 # --------------------------------------------------------------------------
 
+
 def stage_flat_dataset(data_dir, parameters, staging_dir, logger, summary_dir=None):
     """Convert one site's nested HALFpipe inputs into a flat folder.
 
     Returns ``(staged_dir, staged_parameters)`` for ``validate_and_get_inputs``.
     """
     atlas, task, feature = get_halfpipe_settings(parameters)
-    ignore_missing = str(parameters.get(
-        "IgnoreSubjectsWithMissingData", ct.DEFAULT_IgnoreSubjectsWithMissingData
-    )).strip().lower() in ("true", "1", "yes")
+    ignore_missing = str(
+        parameters.get(
+            "IgnoreSubjectsWithMissingData", ct.DEFAULT_IgnoreSubjectsWithMissingData
+        )
+    ).strip().lower() in ("true", "1", "yes")
 
     participants_path = find_participants_file(data_dir, parameters)
     participants = load_participants(participants_path)
-    logger.info(f"Reading nested HALFpipe derivatives (atlas={atlas}, task={task}"
-                f"{', feature=' + feature if feature else ''}) for {len(participants)} participants "
-                f"from {os.path.basename(participants_path)}")
+    logger.info(
+        f"Reading nested HALFpipe derivatives (atlas={atlas}, task={task}"
+        f"{', feature=' + feature if feature else ''}) for {len(participants)} participants "
+        f"from {os.path.basename(participants_path)}"
+    )
 
     matrices = discover_matrices(data_dir, atlas, task, feature)
     by_key: Dict[RunKey, List[MatrixFile]] = {}
@@ -332,11 +377,14 @@ def stage_flat_dataset(data_dir, parameters, staging_dir, logger, summary_dir=No
 
     ambiguous = {k: v for k, v in by_key.items() if len(v) > 1}
     if ambiguous:
-        details = [f"{_describe(k)}: " + ", ".join(sorted(os.path.basename(m.path) for m in v))
-                   for k, v in sorted(ambiguous.items(), key=lambda kv: _describe(kv[0]))]
+        details = [
+            f"{_describe(k)}: " + ", ".join(sorted(os.path.basename(m.path) for m in v))
+            for k, v in sorted(ambiguous.items(), key=lambda kv: _describe(kv[0]))
+        ]
         raise HalfpipeInputError(
             f"More than one correlation matrix for atlas {atlas} per run. Set "
-            "ReadDataFileFromHalfpipeOutputs.feature to choose one:\n  " + "\n  ".join(details)
+            "ReadDataFileFromHalfpipeOutputs.feature to choose one:\n  "
+            + "\n  ".join(details)
         )
 
     labeled = set(participants["key"])
@@ -345,8 +393,10 @@ def stage_flat_dataset(data_dir, parameters, staging_dir, logger, summary_dir=No
         runs_by_subject.setdefault(key.subject, []).append(key)
     unlabeled = sorted(set(runs_by_subject) - labeled)
     if unlabeled:
-        logger.info(f"Ignoring derivatives for {len(unlabeled)} subject(s) not in the participants file: "
-                    f"{', '.join('sub-' + s for s in unlabeled)}")
+        logger.info(
+            f"Ignoring derivatives for {len(unlabeled)} subject(s) not in the participants file: "
+            f"{', '.join('sub-' + s for s in unlabeled)}"
+        )
 
     qc_path = os.path.join(data_dir, parameters.get("QCFile", "qc.csv"))
     if os.path.isfile(qc_path):
@@ -355,8 +405,10 @@ def stage_flat_dataset(data_dir, parameters, staging_dir, logger, summary_dir=No
         logger.info(f"Applying QC decisions from {os.path.basename(qc_path)}")
     else:
         qc = None
-        logger.warning(f"No QC file ({os.path.basename(qc_path)}) found: every run found for each "
-                       "participant is included")
+        logger.warning(
+            f"No QC file ({os.path.basename(qc_path)}) found: every run found for each "
+            "participant is included"
+        )
 
     if os.path.isdir(staging_dir):
         shutil.rmtree(staging_dir)
@@ -370,7 +422,8 @@ def stage_flat_dataset(data_dir, parameters, staging_dir, logger, summary_dir=No
         used = [k for k in keys if qc is None or qc.get(k)]
         excluded = [k for k in keys if k not in used]
         summary = SubjectSummary(
-            subject_id=participant["subject_id"], status="",
+            subject_id=participant["subject_id"],
+            status="",
             sessions=sorted({by_key[k][0].entities["ses"] for k in used if k.session}),
             runs_used=[_label(by_key[k][0]) for k in used],
             runs_excluded=[_label(by_key[k][0]) for k in excluded],
@@ -384,7 +437,9 @@ def stage_flat_dataset(data_dir, parameters, staging_dir, logger, summary_dir=No
         loaded = [load_matrix(by_key[k][0].path) for k in used]
         shapes = {m.shape for m in loaded}
         if len(shapes) != 1:
-            raise HalfpipeInputError(f"Runs for {participant['subject_id']} have different matrix sizes: {sorted(shapes)}")
+            raise HalfpipeInputError(
+                f"Runs for {participant['subject_id']} have different matrix sizes: {sorted(shapes)}"
+            )
         shape = loaded[0].shape
         if matrix_shape is None:
             matrix_shape = shape
@@ -394,72 +449,104 @@ def stage_flat_dataset(data_dir, parameters, staging_dir, logger, summary_dir=No
                 f"have {matrix_shape[0]}x{matrix_shape[1]}; all subjects must use the same atlas"
             )
         averaged = fisher_z_average(loaded)
-        _write_matrix(os.path.join(staging_dir, _staged_matrix_name(staged_id)), averaged)
+        _write_matrix(
+            os.path.join(staging_dir, _staged_matrix_name(staged_id)), averaged
+        )
         staged_rows.append((staged_id, participant["diagnosis"]))
         summary.status = "included"
         summary.matrix_size = f"{shape[0]}x{shape[1]}"
         if len(summary.sessions) > 1:
-            logger.info(f"{participant['subject_id']}: averaged {len(used)} runs across sessions "
-                        f"{', '.join('ses-' + s for s in summary.sessions)}")
+            logger.info(
+                f"{participant['subject_id']}: averaged {len(used)} runs across sessions "
+                f"{', '.join('ses-' + s for s in summary.sessions)}"
+            )
 
     if missing:
-        message = (f"{len(missing)} participant(s) have no usable correlation matrices for atlas {atlas}: "
-                   f"{', '.join(missing)}")
+        message = (
+            f"{len(missing)} participant(s) have no usable correlation matrices for atlas {atlas}: "
+            f"{', '.join(missing)}"
+        )
         if not ignore_missing:
             _write_summary(summaries, summary_dir)
-            raise HalfpipeInputError(message + ". Set IgnoreSubjectsWithMissingData to true to skip them.")
+            raise HalfpipeInputError(
+                message + ". Set IgnoreSubjectsWithMissingData to true to skip them."
+            )
         logger.info(message + " (skipped: IgnoreSubjectsWithMissingData is true)")
     if not staged_rows:
         _write_summary(summaries, summary_dir)
-        raise HalfpipeInputError(f"No participants have usable correlation matrices for atlas {atlas}")
+        raise HalfpipeInputError(
+            f"No participants have usable correlation matrices for atlas {atlas}"
+        )
 
-    pd.DataFrame(staged_rows, columns=[ct.PARAM_KEY_SUBJECT_ID, ct.PARAM_KEY_DIAGNOSIS]).to_csv(
-        os.path.join(staging_dir, STAGED_LABEL_FILE), index=False
-    )
+    pd.DataFrame(
+        staged_rows, columns=[ct.PARAM_KEY_SUBJECT_ID, ct.PARAM_KEY_DIAGNOSIS]
+    ).to_csv(os.path.join(staging_dir, STAGED_LABEL_FILE), index=False)
     _write_summary(summaries, summary_dir)
-    logger.info(f"Converted {len(staged_rows)} participant(s) to the flat layout "
-                f"({matrix_shape[0]}x{matrix_shape[1]} matrices)")
+    logger.info(
+        f"Converted {len(staged_rows)} participant(s) to the flat layout "
+        f"({matrix_shape[0]}x{matrix_shape[1]} matrices)"
+    )
 
     staged_parameters = copy.deepcopy(parameters)
     staged_parameters["LabelFile"] = STAGED_LABEL_FILE
     staged_parameters.pop("ExistingDataFile", None)
-    staged_parameters["ReadDataFileFromHalfpipeOutputs"] = {"atlas": STAGED_ATLAS, "corr": STAGED_FEATURE}
+    staged_parameters["ReadDataFileFromHalfpipeOutputs"] = {
+        "atlas": STAGED_ATLAS,
+        "corr": STAGED_FEATURE,
+    }
     return staging_dir, staged_parameters
 
 
 def _staged_matrix_name(staged_id) -> str:
-    return (f"{staged_id}_task-rest_feature-{STAGED_FEATURE}_atlas-{STAGED_ATLAS}CombinedDseg"
-            f"{MATRIX_SUFFIX}")
+    return (
+        f"{staged_id}_task-rest_feature-{STAGED_FEATURE}_atlas-{STAGED_ATLAS}CombinedDseg"
+        f"{MATRIX_SUFFIX}"
+    )
 
 
 def _check_qc(qc, by_key, labeled, qc_name, logger):
     """Every labeled run on disk needs a QC decision; every included QC row needs a file."""
-    unreviewed = sorted(_label(v[0]) for k, v in by_key.items() if k.subject in labeled and k not in qc)
-    no_file = sorted(_describe(k) for k, include in qc.items() if include and k not in by_key)
+    unreviewed = sorted(
+        _label(v[0]) for k, v in by_key.items() if k.subject in labeled and k not in qc
+    )
+    no_file = sorted(
+        _describe(k) for k, include in qc.items() if include and k not in by_key
+    )
     problems = []
     if unreviewed:
-        problems.append(f"Runs found on disk with no row in {qc_name} (add them with include yes or no):\n    "
-                        + "\n    ".join(unreviewed))
+        problems.append(
+            f"Runs found on disk with no row in {qc_name} (add them with include yes or no):\n    "
+            + "\n    ".join(unreviewed)
+        )
     if no_file:
-        problems.append(f"Rows in {qc_name} marked include=yes with no matching correlation matrix:\n    "
-                        + "\n    ".join(no_file))
+        problems.append(
+            f"Rows in {qc_name} marked include=yes with no matching correlation matrix:\n    "
+            + "\n    ".join(no_file)
+        )
     if problems:
         raise HalfpipeInputError("\n  ".join(problems))
     not_labeled = sorted({k.subject for k in qc} - labeled)
     if not_labeled:
-        logger.warning(f"{qc_name} lists subject(s) not in the participants file: "
-                       f"{', '.join('sub-' + s for s in not_labeled)}")
+        logger.warning(
+            f"{qc_name} lists subject(s) not in the participants file: "
+            f"{', '.join('sub-' + s for s in not_labeled)}"
+        )
 
 
 def _write_summary(summaries, summary_dir):
     if not summary_dir:
         return
     os.makedirs(summary_dir, exist_ok=True)
-    pd.DataFrame([{
-        "subject_id": s.subject_id,
-        "status": s.status,
-        "sessions": ";".join("ses-" + x for x in s.sessions),
-        "runs_used": ";".join(s.runs_used),
-        "runs_excluded": ";".join(s.runs_excluded),
-        "matrix_size": s.matrix_size,
-    } for s in summaries]).to_csv(os.path.join(summary_dir, QC_SUMMARY_FILE), index=False)
+    pd.DataFrame(
+        [
+            {
+                "subject_id": s.subject_id,
+                "status": s.status,
+                "sessions": ";".join("ses-" + x for x in s.sessions),
+                "runs_used": ";".join(s.runs_used),
+                "runs_excluded": ";".join(s.runs_excluded),
+                "matrix_size": s.matrix_size,
+            }
+            for s in summaries
+        ]
+    ).to_csv(os.path.join(summary_dir, QC_SUMMARY_FILE), index=False)
