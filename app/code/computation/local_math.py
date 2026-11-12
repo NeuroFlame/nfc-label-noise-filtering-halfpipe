@@ -3,9 +3,7 @@ import os
 
 import numpy as np
 import pandas as pd
-from framework import with_state
-from framework.cache_files import cache_file
-
+from framework import cache_file, with_state
 from numpy.random import PCG64, Generator, SeedSequence
 from scipy.io import savemat
 from scipy.spatial.distance import cdist
@@ -27,14 +25,12 @@ from .validation import get_complete_FNC_matrix_data
 # Fixed so every site's CRF draws the same sequence of random numbers against
 # its own local data, matching the original single-run seeding.
 _CRF_SEED = 20250908
-CACHE_DIR = "local_cache_dir"
-LOCAL_CACHE_DATA_FILE = cache_file("local_cache_data_file.npy", cache_dir=CACHE_DIR)
+# Site data is cached as a file in the framework's run-scoped cache_dir (removed
+# when the run ends) instead of being carried through serialized step state.
+LOCAL_CACHE_DATA_FILE = "local_cache_data_file.npy"
 
-parent_dir = os.path.dirname(LOCAL_CACHE_DATA_FILE)
-if not os.path.exists(parent_dir):
-    os.makedirs(parent_dir)
 
-def compute_local_crf(inputs: ValidatedInputs, *, parameters, logger, output_dir):
+def compute_local_crf(inputs: ValidatedInputs, *, parameters, logger, output_dir, cache_dir):
     """Run the local CRF step: typical-subject centroids + local FNC averages."""
     data = inputs.data
     rng = Generator(PCG64(SeedSequence(_CRF_SEED)))
@@ -94,20 +90,19 @@ def compute_local_crf(inputs: ValidatedInputs, *, parameters, logger, output_dir
         },
     )
     # Save data in local cache as a file
-    if not os.path.exists(LOCAL_CACHE_DATA_FILE):
-        np.save(LOCAL_CACHE_DATA_FILE, data)
+    data_path = cache_file(LOCAL_CACHE_DATA_FILE, cache_dir=cache_dir)
+    if not os.path.exists(data_path):
+        np.save(data_path, data)
 
     state = {"self_token": inputs.self_token}
     return with_state(payload, state)
 
 
-def compute_dimensional_scores(global_result: GlobalCentroidResult, *, state):
+def compute_dimensional_scores(global_result: GlobalCentroidResult, *, state, cache_dir):
     """Compute each subject's dimensional score against every site's centroids."""
     my_name = global_result.token_to_name[state["self_token"]]
 
-    # Retrieve the path directly from the cache path
-    # OLD WAY: data = state["data"]
-    data = np.load(LOCAL_CACHE_DATA_FILE)
+    data = np.load(cache_file(LOCAL_CACHE_DATA_FILE, cache_dir=cache_dir), allow_pickle=False)
 
     original_labels = data[:, -1]
 
@@ -146,13 +141,11 @@ def compute_dimensional_scores(global_result: GlobalCentroidResult, *, state):
     return with_state(LocalScoreResult(scores=average), next_state)
 
 
-def relabel_subjects(threshold, *, state, parameters, logger, output_dir):
+def relabel_subjects(threshold, *, state, parameters, logger, output_dir, cache_dir):
     """Apply the adaptive threshold, then recompute FNC averages on relabeled subjects."""
     average_score = state["average_score"]
 
-    # Retrieve the path directly from the ArtifactRef
-    # OLD WAY: data = state["data"]
-    data = np.load(LOCAL_CACHE_DATA_FILE)
+    data = np.load(cache_file(LOCAL_CACHE_DATA_FILE, cache_dir=cache_dir), allow_pickle=False)
 
     patient_label = parameters[constants.PARAM_KEY_PATIENT_LABEL] #label1
     control_label = parameters[constants.PARAM_KEY_CONTROL_LABEL]

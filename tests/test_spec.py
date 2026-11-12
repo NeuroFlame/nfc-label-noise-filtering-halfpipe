@@ -1,14 +1,17 @@
 """Smoke tests for the computation spec and its pure-math helpers."""
 
+import tempfile
 import unittest
 
 import numpy as np
 from computation.local_math import (
+    LOCAL_CACHE_DATA_FILE,
     compute_dimensional_scores,
     cumulative_features_selection,
 )
 from computation.spec import SPEC
 from computation.types import CentroidSet, GlobalCentroidResult
+from framework import cache_file
 from framework.workflow import get_task_names
 
 
@@ -48,10 +51,12 @@ class ComputeDimensionalScoresTests(unittest.TestCase):
 
     def test_own_site_uses_original_label_and_is_excluded_from_average(self):
         # Two subjects; the local site is "site2" and only "site1" is a peer.
-        state = {
-            "self_token": "token-for-site2",
-            "data": np.array([[1.0, 2.0], [3.0, 4.0]]),  # last column is the label
-        }
+        state = {"self_token": "token-for-site2"}
+        cache_dir = self.enterContext(tempfile.TemporaryDirectory())
+        np.save(
+            cache_file(LOCAL_CACHE_DATA_FILE, cache_dir=cache_dir),
+            np.array([[1.0, 2.0], [3.0, 4.0]]),  # last column is the label
+        )
         global_result = GlobalCentroidResult(
             site_centroids={
                 "site1": CentroidSet(
@@ -71,7 +76,7 @@ class ComputeDimensionalScoresTests(unittest.TestCase):
             },
         )
 
-        result = compute_dimensional_scores(global_result, state=state)
+        result = compute_dimensional_scores(global_result, state=state, cache_dir=cache_dir)
         payload, next_state = result.payload, result.state
 
         self.assertEqual(next_state["my_name"], "site2")
