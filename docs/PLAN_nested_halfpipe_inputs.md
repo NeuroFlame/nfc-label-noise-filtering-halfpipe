@@ -1,6 +1,6 @@
 # Plan: Reading nested HALFpipe derivatives in Fed LAMP (nfc-label-noise-filtering)
 
-**Status:** implemented in `nfc-label-noise-filtering-halfpipe` (forked from `nfc-label-noise-filtering` at `4b53d0b`)
+**Status:** implemented in `nfc-label-noise-filtering-halfpipe` (forked from `nfc-label-noise-filtering` at upstream commit `4b53d0b`, which is `78191cd` in this repository)
 
 > **Decision (2026-11-12), resolving Q8:** a hybrid of §5 and §11. At the start of each run the computation converts the nested derivatives into the existing flat per-subject layout, inside the run's cache directory, and then runs the unchanged pipeline (`app/code/computation/halfpipe_inputs.py`). Sites provide `participants.csv` or `participants.tsv`. `qc.csv` is used when present; **without it, every run found is used** (this replaces the "error for multi-session subjects" fallback in §5.6). Not yet built: the QC template helper and the `exclude*.json` pre-fill (§5.5).
 
