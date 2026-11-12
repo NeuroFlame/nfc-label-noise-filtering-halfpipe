@@ -111,28 +111,28 @@ def validate_and_get_inputs(data_dir, parameters, logger):
             logger.error(error_message)
             return False, None
 
-        # Ensure that values in label file are the ones listed in "LabelDefinition" parameters
-        unique_label_list_in_data = set(
-            labels_df[ct.PARAM_KEY_DIAGNOSIS].unique().tolist()
+        # Code patients as 1 and controls as 2. Labels match ignoring case and
+        # surrounding whitespace, and numerically ("1" matches 1 and 1.0).
+        codes = {
+            _label_key(patient_label): ct.PATIENT_LABEL_VALUE,
+            _label_key(control_label): ct.CONTROL_LABEL_VALUE,
+        }
+        coded = labels_df[ct.PARAM_KEY_DIAGNOSIS].map(
+            lambda value: codes.get(_label_key(value))
         )
-        unique_label_list_in_desc = set([patient_label, control_label])
-
-        if not unique_label_list_in_data.issubset(unique_label_list_in_desc):
+        unknown = sorted(
+            {str(v) for v in labels_df.loc[coded.isna(), ct.PARAM_KEY_DIAGNOSIS]}
+        )
+        if unknown:
             error_message = (
-                "Label descriptions do not contain all expected labels. Provided "
-                f"labels:  {str(unique_label_list_in_desc)}, but label file has: "
-                f"{str(unique_label_list_in_data)}.\n\n"
+                f"'{label_filename}' has diagnosis values that are neither "
+                f"{ct.PARAM_KEY_PATIENT_LABEL} ({patient_label!r}) nor "
+                f"{ct.PARAM_KEY_CONTROL_LABEL} ({control_label!r}): "
+                f"{', '.join(repr(v) for v in unknown)}.\n\n"
             )
             logger.error(error_message)
             return False, None
-
-        # Convert the labels of patients & controls to the 1 and 2 respectively
-        labels_df[ct.PARAM_KEY_DIAGNOSIS] = labels_df[ct.PARAM_KEY_DIAGNOSIS].replace(
-            f"(?i)^{patient_label}$", ct.PATIENT_LABEL_VALUE, regex=True
-        )
-        labels_df[ct.PARAM_KEY_DIAGNOSIS] = labels_df[ct.PARAM_KEY_DIAGNOSIS].replace(
-            f"(?i)^{control_label}$", ct.CONTROL_LABEL_VALUE, regex=True
-        )
+        labels_df[ct.PARAM_KEY_DIAGNOSIS] = coded.astype(int)
         # logger.debug(f"updated labels : {str(labels_df.head(2))}")
 
         logger.debug("Merging two dfs\n\n")
@@ -280,8 +280,19 @@ def get_complete_FNC_matrix_data(upper_triangle_data):
 def _trim_all_object_columns(df):
     """Trim whitespace from ends of each string value across all object columns."""
     obj_cols = df.select_dtypes(include=["object"]).columns
-    df[obj_cols] = df[obj_cols].apply(lambda x: x.str.strip())
+    df[obj_cols] = df[obj_cols].apply(
+        lambda column: column.map(lambda v: v.strip() if isinstance(v, str) else v)
+    )
     return df
+
+
+def _label_key(value):
+    """Comparable form of a diagnosis label: trimmed, lower case, numbers as numbers."""
+    text = str(value).strip().lower()
+    try:
+        return repr(float(text))
+    except ValueError:
+        return text
 
 
 def _case_insensitive_glob(pattern):
