@@ -6,6 +6,7 @@ import uuid
 from .halfpipe_inputs import (
     STAGED_DIR_NAME,
     HalfpipeInputError,
+    explain_unmatched_derivatives,
     is_nested_halfpipe_dataset,
     stage_flat_dataset,
 )
@@ -25,8 +26,8 @@ def load_inputs(data_dir, parameters, logger, cache_dir, output_dir):
     recognizes which entry in the aggregator's site-keyed results is its own.
     See local_math.py's ``compute_dimensional_scores``.
     """
-    if is_nested_halfpipe_dataset(data_dir, parameters):
-        try:
+    try:
+        if is_nested_halfpipe_dataset(data_dir, parameters):
             data_dir, parameters = stage_flat_dataset(
                 data_dir,
                 parameters,
@@ -34,11 +35,15 @@ def load_inputs(data_dir, parameters, logger, cache_dir, output_dir):
                 logger,
                 summary_dir=output_dir,
             )
-        except HalfpipeInputError as error:
-            logger.error(f"{error}\n\n")
-            raise ValueError(
-                "Invalid run input; see the site log for validation details"
-            ) from error
+        else:
+            unmatched = explain_unmatched_derivatives(data_dir, parameters)
+            if unmatched:
+                raise HalfpipeInputError(unmatched)
+    except HalfpipeInputError as error:
+        logger.error(f"{error}\n\n")
+        raise ValueError(
+            "Invalid run input; see the site log for validation details"
+        ) from error
 
     is_valid, data = validate_and_get_inputs(data_dir, parameters, logger)
     if not is_valid:
