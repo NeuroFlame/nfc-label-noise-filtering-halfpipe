@@ -22,6 +22,14 @@ first converts them into the flat per-subject layout the original reader uses
 unchanged. The design, the decisions behind it and the remaining open questions
 are in [docs/PLAN_nested_halfpipe_inputs.md](docs/PLAN_nested_halfpipe_inputs.md).
 
+Since 0.1.2 the conversion also handles runs told apart by other filename
+entities (`dir-AP`/`dir-PA`, `echo-`, `acq-`; matched through extra `qc.csv`
+columns), follows symbolic links, skips `__MACOSX`, rejects malformed matrices,
+accepts text diagnoses, and stops with specific messages for unknown or missing
+diagnoses, a wrong task/atlas/feature, empty ROIs and mismatched matrix sizes
+across sites. These cases are covered by the 46 layouts in
+`tests/scenario_data.py` (`scripts/generate_scenarios.py` writes them to disk).
+
 ## Why `stepped_workflow`, not `iterative_workflow`
 
 The old controller ran a fixed 4-round sequence with no convergence loop:
