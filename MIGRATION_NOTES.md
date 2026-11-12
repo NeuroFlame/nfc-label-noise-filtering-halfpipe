@@ -15,9 +15,7 @@ for a sibling computation migrated the same way.
 
 This repository (`nfc-label-noise-filtering-halfpipe`) was forked from
 [`nfc-label-noise-filtering`](https://github.com/NeuroFlame/nfc-label-noise-filtering)
-at upstream commit `4b53d0b`, keeping its history (commit hashes differ
-here because author emails were later normalized; `4b53d0b` is `78191cd` in
-this repository). The only functional addition is input
+at `78191cd`, keeping its history. The only functional addition is input
 handling: when a site's folder holds nested HALFpipe derivatives, `load_inputs`
 first converts them into the flat per-subject layout the original reader uses
 (`app/code/computation/halfpipe_inputs.py`), and the rest of the workflow is
