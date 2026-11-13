@@ -1,14 +1,19 @@
 """Generate nested HALFpipe-style test sites for local simulation.
 
-Writes test_data/site1..site3, each with a participants file and HALFpipe
+Writes test_data/site1..site3, each with participants.csv, qc.csv and HALFpipe
 derivatives nested as sub-*/[ses-*/]func/task-rest/, covering the layouts
 the computation must handle:
 
-    site1  sessions ses-V1A/ses-V1B, runs 1-2, participants.csv, qc.csv
-           (some runs and one follow-up session excluded)
-    site2  no session level, runs 1-2, participants.tsv (participant_id), no qc.csv
-    site3  one session, runs 01-02, qc.csv, plus distractor files
-           (other atlas, covariance, timeseries, Finder-style copies)
+    site1  sessions ses-V1A/ses-V1B, runs 1-2
+           (qc.csv excludes some runs and one follow-up session)
+    site2  no session level, runs 1-2 (qc.csv includes every run)
+    site3  one session, runs 01-02, plus distractor files
+           (other atlas, covariance, timeseries, Finder-style copies;
+           qc.csv excludes some runs)
+
+Either file can be deleted to test that case: without qc.csv every run is
+used (for site2 the results are unchanged), and the participants file can be
+converted to participants.tsv.
 
 Matrices are NeuroMark1-sized (53x53) correlations of simulated time series.
 Patients (diagnosis 1) have weaker within-domain coupling in two domains and
@@ -41,6 +46,7 @@ SITES = {
         runs=["1", "2"],
         participants="participants.csv",
         qc=True,
+        qc_exclusions=True,
         distractors=False,
         seed=101,
     ),
@@ -50,8 +56,9 @@ SITES = {
         n_patients=12,
         sessions=[None],
         runs=["1", "2"],
-        participants="participants.tsv",
-        qc=False,
+        participants="participants.csv",
+        qc=True,
+        qc_exclusions=False,
         distractors=False,
         seed=202,
     ),
@@ -63,6 +70,7 @@ SITES = {
         runs=["01", "02"],
         participants="participants.csv",
         qc=True,
+        qc_exclusions=True,
         distractors=True,
         seed=303,
     ),
@@ -152,9 +160,9 @@ def generate_site(out, site, cfg, roi_domains, truth):
                     )
                 ).write_bytes(b"")
                 include = "yes"
-                if cfg["qc"] and i % 7 == 3 and r_index == 1:
+                if cfg["qc_exclusions"] and i % 7 == 3 and r_index == 1:
                     include = "no"  # a run that failed QC
-                if cfg["qc"] and s_index == 1 and i % 5 == 0:
+                if cfg["qc_exclusions"] and s_index == 1 and i % 5 == 0:
                     include = "no"  # follow-up session not used for this subject
                 qc_rows.append(
                     (f"sub-{sub}", f"ses-{ses}" if ses else "", run, include)
