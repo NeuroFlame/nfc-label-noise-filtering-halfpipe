@@ -6,6 +6,7 @@ import hashlib
 import os
 import shutil
 import stat
+import tempfile
 import threading
 import time
 import uuid
@@ -90,6 +91,7 @@ class ArtifactTransfer(FLComponent):
         self.chunk_timeout = chunk_timeout
         self._root = ""
         self._artifact_root = ""
+        self._output_artifact_root = ""
         self._incoming_dir = ""
         self._outgoing_dir = ""
         self._registry: Dict[str, _OutgoingArtifact] = {}
@@ -123,12 +125,25 @@ class ArtifactTransfer(FLComponent):
 
     def _initialize_run(self, fl_ctx: FLContext) -> None:
         output_dir = os.path.realpath(resolve_output_directory(fl_ctx))
-        self._artifact_root = os.path.join(output_dir, ".artifacts")
+        self._output_artifact_root = os.path.join(output_dir, ".artifacts")
+        temporary_parent = os.path.realpath(
+            os.getenv("NEUROFLAME_ARTIFACT_TEMP_DIR") or tempfile.gettempdir()
+        )
+        try:
+            self._artifact_root = tempfile.mkdtemp(
+                prefix="neuroflame-artifacts-",
+                dir=temporary_parent,
+            )
+            os.chmod(self._artifact_root, 0o700)
+        except OSError as error:
+            raise ArtifactTransferError(
+                "Private artifact staging storage is unavailable"
+            ) from error
         self._root = os.path.join(self._artifact_root, "transport")
         self._incoming_dir = os.path.join(self._root, "incoming")
         self._outgoing_dir = os.path.join(self._root, "outgoing")
         for directory in (self._root, self._incoming_dir, self._outgoing_dir):
-            _ensure_private_directory(directory, output_dir)
+            _ensure_private_directory(directory, self._artifact_root)
         self.dest_dir = self._incoming_dir
         self._shutting_down = False
         self._cleanup_pending = False
@@ -149,8 +164,9 @@ class ArtifactTransfer(FLComponent):
             self._registry.clear()
             self._cleanup_pending = False
             artifact_root = self._artifact_root
-        if artifact_root and os.path.isdir(artifact_root):
-            shutil.rmtree(artifact_root)
+            output_artifact_root = self._output_artifact_root
+        _remove_directory(artifact_root)
+        _remove_directory(output_artifact_root)
 
     def _finish_activity(self) -> None:
         with self._lock:
@@ -467,15 +483,17 @@ class ArtifactTransfer(FLComponent):
             last_code = rc
             if rc == ReturnCode.OK and temp_path:
                 try:
-                    if not _promote_verified_file(
+                    promoted, verification_detail = _promote_verified_file_with_reason(
                         temp_path,
                         final_path,
                         manifest[_SIZE_KEY],
                         manifest[_HASH_KEY],
-                    ):
-                        last_integrity_error = "Artifact integrity verification failed"
-                    else:
+                    )
+                    if promoted:
                         return final_path
+                    last_integrity_error = (
+                        f"Artifact integrity verification failed: {verification_detail}"
+                    )
                 finally:
                     _unlink_path(temp_path)
             if indeterminate or rc in (ReturnCode.TIMEOUT, ReturnCode.TASK_ABORTED):
@@ -822,17 +840,34 @@ def _open_verified_file(
     path: str, expected_size: int, expected_hash: str
 ) -> tuple[int, os.stat_result] | None:
     """Hash and validate one non-symlink regular file through one descriptor."""
+    verified, _ = _open_verified_file_with_reason(path, expected_size, expected_hash)
+    return verified
+
+
+def _open_verified_file_with_reason(
+    path: str, expected_size: int, expected_hash: str
+) -> tuple[tuple[int, os.stat_result] | None, str | None]:
+    """Verify a file and return a content-free diagnostic on failure."""
     descriptor = None
     try:
         descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
         file_stat = os.fstat(descriptor)
-        if (
-            not stat.S_ISREG(file_stat.st_mode)
-            or file_stat.st_nlink != 1
-            or file_stat.st_size != expected_size
-        ):
+        if not stat.S_ISREG(file_stat.st_mode):
             os.close(descriptor)
-            return None
+            return None, "received path is not a regular file"
+        if file_stat.st_nlink != 1:
+            os.close(descriptor)
+            return (
+                None,
+                f"received file has link count {file_stat.st_nlink}, expected 1",
+            )
+        if file_stat.st_size != expected_size:
+            os.close(descriptor)
+            return (
+                None,
+                f"received size {file_stat.st_size} does not match expected "
+                f"size {expected_size}",
+            )
         digest = hashlib.sha256()
         while True:
             chunk = os.read(descriptor, DEFAULT_ARTIFACT_CHUNK_BYTES)
@@ -843,15 +878,15 @@ def _open_verified_file(
         identity = (file_stat.st_dev, file_stat.st_ino, file_stat.st_size)
         if identity != (final_stat.st_dev, final_stat.st_ino, final_stat.st_size):
             os.close(descriptor)
-            return None
+            return None, "received file identity changed during verification"
         if digest.hexdigest() != expected_hash:
             os.close(descriptor)
-            return None
-        return descriptor, final_stat
-    except OSError:
+            return None, "received SHA-256 does not match the manifest"
+        return (descriptor, final_stat), None
+    except OSError as error:
         if descriptor is not None:
             os.close(descriptor)
-        return None
+        return None, _safe_os_error("opening or reading the received file", error)
 
 
 def _promote_verified_file(
@@ -861,14 +896,38 @@ def _promote_verified_file(
     expected_hash: str,
 ) -> bool:
     """Promote exactly the inode that was hashed, detecting pathname swaps."""
-    verified = _open_verified_file(temporary_path, expected_size, expected_hash)
+    promoted, _ = _promote_verified_file_with_reason(
+        temporary_path,
+        final_path,
+        expected_size,
+        expected_hash,
+    )
+    return promoted
+
+
+def _promote_verified_file_with_reason(
+    temporary_path: str,
+    final_path: str,
+    expected_size: int,
+    expected_hash: str,
+) -> tuple[bool, str | None]:
+    """Promote a verified inode and return a content-free failure diagnostic."""
+    verified, failure = _open_verified_file_with_reason(
+        temporary_path, expected_size, expected_hash
+    )
     if verified is None:
-        return False
+        return False, failure
     descriptor, verified_stat = verified
     identity = (verified_stat.st_dev, verified_stat.st_ino)
     try:
-        os.fchmod(descriptor, 0o600)
-        current = os.lstat(temporary_path)
+        try:
+            os.fchmod(descriptor, 0o600)
+        except OSError as error:
+            return False, _safe_os_error("setting private file permissions", error)
+        try:
+            current = os.lstat(temporary_path)
+        except OSError as error:
+            return False, _safe_os_error("checking the received path", error)
         if (
             not stat.S_ISREG(current.st_mode)
             or (
@@ -877,9 +936,17 @@ def _promote_verified_file(
             )
             != identity
         ):
-            return False
-        os.replace(temporary_path, final_path)
-        promoted = os.lstat(final_path)
+            return False, "received path identity changed before promotion"
+        try:
+            os.replace(temporary_path, final_path)
+        except OSError as error:
+            return False, _safe_os_error(
+                "atomically promoting the received file", error
+            )
+        try:
+            promoted = os.lstat(final_path)
+        except OSError as error:
+            return False, _safe_os_error("checking the promoted file", error)
         if (
             not stat.S_ISREG(promoted.st_mode)
             or (
@@ -889,12 +956,17 @@ def _promote_verified_file(
             != identity
         ):
             _unlink_path(final_path)
-            return False
-        return True
-    except OSError:
-        return False
+            return False, "promoted file identity does not match the verified file"
+        return True, None
     finally:
         os.close(descriptor)
+
+
+def _safe_os_error(operation: str, error: OSError) -> str:
+    """Describe a filesystem failure without including a sensitive pathname."""
+    errno_value = error.errno if error.errno is not None else "unknown"
+    description = error.strerror or type(error).__name__
+    return f"{operation} failed (errno {errno_value}: {description})"
 
 
 def _unlink_path(path: str) -> None:
@@ -918,7 +990,13 @@ def _remove_received_temp(path: str, incoming_root: str) -> None:
 
 def _remove_directory(path: str) -> None:
     """Remove one runtime-owned staging tree if it still exists."""
-    if path and os.path.isdir(path):
+    if not path:
+        return
+    try:
+        mode = os.lstat(path).st_mode
+    except FileNotFoundError:
+        return
+    if stat.S_ISDIR(mode) and not stat.S_ISLNK(mode):
         shutil.rmtree(path)
 
 

@@ -21,6 +21,9 @@ def create_job(app_path: str, job_path: str, min_clients: int) -> None:
     if not os.path.isdir(app_path):
         raise FileNotFoundError(f"Source app path '{app_path}' does not exist.")
 
+    if type(min_clients) is not int or min_clients < 1:
+        raise ValueError("Participant count must be a positive integer")
+
     # Prepare the destination path for the app
     job_app_path = os.path.join(job_path, "app")
     os.makedirs(job_app_path, exist_ok=True)
@@ -33,6 +36,7 @@ def create_job(app_path: str, job_path: str, min_clients: int) -> None:
         ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "*.pyo"),
     )
     update_client_tasks_from_spec(job_app_path)
+    update_controller_participant_count(job_app_path, min_clients)
 
     # Generate and write job_meta to meta.json
     job_meta = generate_job_meta(min_clients)
@@ -66,3 +70,21 @@ def update_client_tasks_from_spec(app_path: str) -> None:
         config_file.seek(0)
         json.dump(config, config_file, indent=2)
         config_file.truncate()
+
+
+def update_controller_participant_count(app_path: str, min_clients: int) -> None:
+    """Require every provisioned participant to finish each federated step."""
+    config_path = os.path.join(app_path, "config", "config_fed_server.json")
+    with open(config_path, "r", encoding="utf-8") as config_file:
+        config = json.load(config_file)
+    controllers = [
+        workflow
+        for workflow in config["workflows"]
+        if workflow.get("path") == "runtime.controller.RuntimeController"
+    ]
+    if len(controllers) != 1:
+        raise ValueError("Expected one computation runtime controller")
+    # Job admission alone does not prevent NVFlare from advancing after a quorum.
+    controllers[0].setdefault("args", {})["min_clients"] = min_clients
+    with open(config_path, "w", encoding="utf-8") as config_file:
+        json.dump(config, config_file, indent=2)
