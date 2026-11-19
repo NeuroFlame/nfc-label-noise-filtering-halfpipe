@@ -15,7 +15,8 @@ else:
 
 REVISION = re.compile(r"[0-9a-f]{7,64}")
 DIGEST = re.compile(r"sha256:[0-9a-f]{64}")
-PUSH_DIGEST = re.compile(rf"digest:\s+({DIGEST.pattern})")
+MANIFEST_DIGEST = re.compile(rf"Digest:\s+({DIGEST.pattern})")
+DEFAULT_PLATFORMS = "linux/amd64,linux/arm64"
 
 
 def _run(command: list[str], repository: Path, *, capture_output: bool = False) -> str:
@@ -107,18 +108,45 @@ def _image_tags(config: dict[str, str], version: str, revision: str) -> list[str
     ]
 
 
-def _push_tags(tags: list[str], repository: Path) -> str:
-    """Push image tags and return the registry-reported digest."""
-    digest: str | None = None
-    for tag in tags:
-        output = _run(["docker", "push", tag], repository, capture_output=True)
-        print(output, end="")
-        match = PUSH_DIGEST.search(output)
-        if match:
-            digest = match.group(1)
-    if not digest:
-        raise RuntimeError("Docker push completed without reporting an image digest")
-    return digest
+def _verify_pushed_platforms(tag: str, platforms: list[str], repository: Path) -> None:
+    """Confirm the pushed manifest list covers every requested platform."""
+    output = _run(
+        ["docker", "buildx", "imagetools", "inspect", tag],
+        repository,
+        capture_output=True,
+    )
+    missing = [platform for platform in platforms if platform not in output]
+    if missing:
+        raise RuntimeError(
+            f"Pushed manifest for {tag} is missing platform(s): {', '.join(missing)}"
+        )
+
+
+def _manifest_digest(tag: str, repository: Path) -> str:
+    """Return the digest of the pushed (possibly multi-platform) manifest."""
+    output = _run(
+        ["docker", "buildx", "imagetools", "inspect", tag],
+        repository,
+        capture_output=True,
+    )
+    match = MANIFEST_DIGEST.search(output)
+    if not match:
+        raise RuntimeError("docker buildx imagetools inspect did not report a digest")
+    return match.group(1)
+
+
+ARCH_ALIASES = {"x86_64": "amd64", "aarch64": "arm64"}
+
+
+def _host_platform(repository: Path) -> str:
+    """Return the Docker daemon's own OS/architecture as a buildx platform."""
+    raw = _run(
+        ["docker", "info", "--format", "{{.OSType}}/{{.Architecture}}"],
+        repository,
+        capture_output=True,
+    ).strip()
+    os_type, _, arch = raw.partition("/")
+    return f"{os_type}/{ARCH_ALIASES.get(arch, arch)}"
 
 
 def publish(
@@ -129,7 +157,14 @@ def publish(
     push: bool,
     local: bool,
 ) -> None:
-    """Build, inspect, tag, and optionally push a computation image."""
+    """Build, inspect, tag, and optionally push a computation image.
+
+    `platform` may name several comma-separated platforms (the default is
+    both `linux/amd64` and `linux/arm64`). `buildx` can only `--push` a
+    multi-platform result straight to a registry; it cannot `--load` one
+    into the local image store for inspection. `--local` and `--no-push`
+    builds, which do load locally, therefore require a single platform.
+    """
     resolved_revision = _get_revision(repository, revision)
     if push:
         _ensure_tracked_files_clean(repository)
@@ -137,8 +172,19 @@ def publish(
     tags = _image_tags(
         config, labels["org.opencontainers.image.version"], resolved_revision
     )
+    platforms = [name.strip() for name in platform.split(",") if name.strip()]
+    if not platforms:
+        raise ValueError("--platform must name at least one platform")
+    if not push and len(platforms) > 1:
+        raise ValueError(
+            "--local and --no-push build a single platform so it can be "
+            "loaded and inspected locally; pass one --platform for those, "
+            "e.g. --platform linux/arm64"
+        )
+
     build_command = [
         "docker",
+        "buildx",
         "build",
         "--platform",
         platform,
@@ -149,8 +195,16 @@ def publish(
         build_command.extend(["--label", f"{key}={value}"])
     for tag in tags:
         build_command.extend(["-t", tag])
+    build_command.append("--push" if push else "--load")
     build_command.append(".")
     _run(build_command, repository)
+
+    if push:
+        _verify_pushed_platforms(tags[0], platforms, repository)
+        digest = _manifest_digest(tags[0], repository)
+        print(f"Published multi-platform image: {config['repository']}@{digest}")
+        print(f"Platforms: {', '.join(platforms)}")
+        return
 
     inspected = _run(
         ["docker", "image", "inspect", tags[0], "--format", "{{json .Config.Labels}}"],
@@ -173,12 +227,7 @@ def publish(
         print(f"Local image ID: {image_id}")
         return
 
-    if not push:
-        print(f"Built and validated {tags[0]} without pushing")
-        return
-
-    digest = _push_tags(tags, repository)
-    print(f"Published immutable image: {config['repository']}@{digest}")
+    print(f"Built and validated {tags[0]} for {platform} without pushing")
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -186,7 +235,14 @@ def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("revision", nargs="?", help="explicit Git revision")
     parser.add_argument(
-        "--platform", default="linux/amd64", help="target container platform"
+        "--platform",
+        default=None,
+        help=(
+            "target container platform(s), comma-separated for a multi-arch "
+            f"push (default: {DEFAULT_PLATFORMS}); --local and --no-push "
+            "default to the host's own platform instead, since buildx can "
+            "only load a single platform into the local image store"
+        ),
     )
     destination = parser.add_mutually_exclusive_group()
     destination.add_argument(
@@ -204,11 +260,15 @@ def main() -> None:
     """Run the computation image publisher."""
     args = _build_parser().parse_args()
     repository = Path(__file__).resolve().parents[1]
+    push = not args.no_push and not args.local
+    platform = args.platform
+    if platform is None:
+        platform = DEFAULT_PLATFORMS if push else _host_platform(repository)
     publish(
         repository,
         revision=args.revision,
-        platform=args.platform,
-        push=not args.no_push and not args.local,
+        platform=platform,
+        push=push,
         local=args.local,
     )
 
